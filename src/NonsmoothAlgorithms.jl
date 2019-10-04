@@ -1,5 +1,5 @@
 module NonsmoothAlgorithms
-using NonsmoothFunctions
+using NonsmoothModels
 
 include("bfgs.jl")
 export bfgs_solve

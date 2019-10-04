@@ -32,7 +32,7 @@ function bfgs_solve(model, x0, c1, c2, max_iters, callback=missing)
         end
 
         if !ismissing(callback) 
-            callback(x, H)
+            callback(x, H, n_trials)
         end
         f = fp
         g .= gp

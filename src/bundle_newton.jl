@@ -1,4 +1,4 @@
-using NonsmoothFunctions
+using NonsmoothModels
 
 struct NewtonBundle{T <: Real}
     model
@@ -111,7 +111,7 @@ function updatebundle!(bundle :: NewtonBundle, r, y)
     H = bundle.H
 
     Y[:,r] = y
-    F[r] = evaluate!(bundle.model, y, gradientout=view(G,:,r), hessianout=view(H,:,:,r))
+    F[r] = evaluate!(bundle.model, y, view(G,:,r), view(H,:,:,r))
 
     updatereducedfactorization!(bundle :: NewtonBundle)
 
@@ -129,7 +129,7 @@ function bfgsupdatebundle!(bundle :: NewtonBundle, r, x)
 
     Y[:,r] = x
     g_prev = G[:,r]
-    F[r] = evaluate!(bundle.model, x, gradientout=view(G,:,r))
+    F[r] = evaluate!(bundle.model, x, view(G,:,r))
     y = G[:,r] - g_prev
 
     # BFGS
@@ -159,7 +159,7 @@ function directsolve(bundle :: NewtonBundle, lambda, eta)
         # Z[:,j] = Y[:,j] - Y*lambda
     end
 
-    # eta = maximum([eigmax(-H[:,:,i]) for i = 1:k])
+    eta = maximum([eigmax(-H[:,:,i]) for i = 1:k])
     # eta = minimum(eig)
     # println(eigvals(H[:,:,1]))
 
@@ -238,6 +238,8 @@ function firstorderdirectsolve(bundle :: NewtonBundle, lambda, t, eta)
         # Z[:,j] = Y[:,j] - Y*lambda
         # Z[:,j] = Y[:,j] - prev_x
     end
+
+    # eta = 2*maximum([eigmax(-H[:,:,i]) for i = 1:k])
 
     A = zeros(n+1+k, n+1+k)
     A[1:n,1:n] = t*Matrix{Float64}(I, n, n)
@@ -321,7 +323,9 @@ function bundlenewtonsolve(model, simplexqpsolver, Y, eta, rho, f_tol, max_iter)
         # Unsafe, find a better way to do this
         d = zeros(bundle.k)
         G = gradientmatrix(bundle)
-        g_x = gradient(model, x)
+        # g_x = gradient(model, x)
+        g_x = similar(x)
+        evaluate!(model, x, g_x)
 
         if ismissing(g_x)
             println("Nonsmooth point encountered, stopping...")
@@ -381,7 +385,7 @@ function bundlenewtonfirstordersolve(model, simplexqpsolver, Y, eta, rho, f_tol,
         if i == 1
             println("Diameter\tSlope\tUpper bound\tLower bound")
         end
-        println(bundlediameter(bundle), "\t", slope, "\t", upper_bound[i] - lower_bound[i])
+        println(bundlediameter(bundle), "\t", slope, "\t", upper_bound[i], "\t", lower_bound[i])
 
         accept = false
         t = 0.25
@@ -391,7 +395,9 @@ function bundlenewtonfirstordersolve(model, simplexqpsolver, Y, eta, rho, f_tol,
         while !accept
             x = firstorderdirectsolve(bundle, lambda, t, eta)
             # x = reducednewtonlinesearchsolve(bundle, lambda, t)
-            g_x = gradient(model, x)
+            # g_x = gradient(model, x)
+            g_x = similar(x)
+            evaluate!(model, x, g_x)
             d = zeros(bundle.k)
             G = gradientmatrix(bundle)
             weights = []
@@ -411,15 +417,18 @@ function bundlenewtonfirstordersolve(model, simplexqpsolver, Y, eta, rho, f_tol,
             end
             r = argmin(d)
 
+            # newdiameter = maximum( norm(bundle.Y[:,i] - bundle.Y[:,j]) for i = 1:bundle.k if i != r for j = 1:bundle.k if j != r)
+            # newdiameter = max(newdiameter, maximum( norm(x - bundle.Y[:,i]) for i = 1:bundle.k if i != r ))
+
             # if bundle.F[r] - objective(model, x) > 0
             # if bundle.F[r] - objective(model, x) >= 1e-5*(-dot(bundle.G[:,r], x - bundle.Y[:,r]))
             # if objective(model, x) <= bundle.F[r] + dot(bundle.G[:,r], x - bundle.Y[:,r]) + (t/2)*norm(x - bundle.Y[:,r])^2
-            # if d[r] < slope
+            # if d[r] < slope || newdiameter < bundlediameter(bundle)
             # if bundle.F[argmax(bundle.F)] - objective(model, x) >= 1e-5*(-dot(bundle.G[:,argmax(bundle.F)], x - bundle.Y[:,argmax(bundle.F)]))
             # if objective(model, x) < bundle.F[r] - (1e-5/t)*norm(x - bundle.Y[:,r])^2
             if true
                 accept = true
-                println(t, "\t", numtrials)
+                println("\t", t, "\t", numtrials)
                 X[:,i] = x
                 updatebundle!(bundle, r, x)
                 lambda = weights[r]
